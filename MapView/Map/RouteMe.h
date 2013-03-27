@@ -55,7 +55,6 @@
 #import "RMMapViewDelegate.h"
 #import "RMMarker.h"
 #import "RMMemoryCache.h"
-#import "RMNotifications.h"
 #import "RMOpenCycleMapSource.h"
 #import "RMOpenSeaMapLayer.h"
 #import "RMOpenSeaMapSource.h"
