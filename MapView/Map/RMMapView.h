@@ -115,6 +115,14 @@ typedef enum : NSUInteger {
 
 @property (nonatomic, readonly) float adjustedZoomForRetinaDisplay; // takes adjustTilesForRetinaDisplay and screen scale into account
 
+/** @name Supporting Interface Rotations */
+
+/** Freezes the map's contents.
+ *
+ *  When set to `YES` the map takes a snapshot of its current contents and displays it on top of any other subview. This can be enabled prior to interface rotations to prevent visual artifacts. Set back to `NO` once the rotation is finished to remove the snapshot.
+ */
+@property (nonatomic, assign, getter=isFrozen) BOOL frozen;
+
 /** @name Fine-Tuning the Map Appearance */
 
 /** Take missing tiles from lower-numbered zoom levels, up to a given number of zoom levels. This can be used in order to increase perceived tile load performance or to allow zooming in beyond levels supported natively by a given tile source. Defaults to 0. */
