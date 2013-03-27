@@ -142,6 +142,7 @@
     RMMapOverlayView *_overlayView;
     UIView *_tiledLayersSuperview;
     RMLoadingTileView *_loadingTileView;
+    UIImageView *_snapshotView;
 
     RMProjection *_projection;
     RMFractalTileProjection *_mercatorToTileProjection;
@@ -231,6 +232,7 @@
     _mercatorToTileProjection = nil;
     _mapScrollView = nil;
     _overlayView = nil;
+    _snapshotView = nil;
 
     _screenScale = [UIScreen mainScreen].scale;
 
@@ -373,6 +375,8 @@
 
         [self correctPositionOfAllAnnotations];
         [self correctMinZoomScaleForBoundingMask];
+        
+        [self updateSnapshotView];
     }
 }
 
@@ -405,6 +409,7 @@
     [_tiledLayersSuperview release]; _tiledLayersSuperview = nil;
     [_mapScrollView release]; _mapScrollView = nil;
     [_overlayView release]; _overlayView = nil;
+    [_snapshotView release]; _snapshotView = nil;
     [_tileSourcesContainer cancelAllDownloads]; [_tileSourcesContainer release]; _tileSourcesContainer = nil;
     [_projection release]; _projection = nil;
     [_mercatorToTileProjection release]; _mercatorToTileProjection = nil;
@@ -1130,6 +1135,7 @@
     [_tileSourcesContainer cancelAllDownloads];
 
     [_overlayView removeFromSuperview]; [_overlayView release]; _overlayView = nil;
+    [_snapshotView removeFromSuperview]; [_snapshotView release]; _snapshotView = nil;
 
     for (RMMapTiledLayerView *tiledLayerView in _tiledLayersSuperview.subviews)
     {
@@ -1886,12 +1892,19 @@
 {
     _overlayView.hidden = !includeOverlay;
 
+    BOOL wasTrackingHaloHidden = _trackingHaloAnnotation.layer.hidden;
+    _trackingHaloAnnotation.layer.hidden = YES;
+    
     UIGraphicsBeginImageContextWithOptions(self.bounds.size, self.opaque, [[UIScreen mainScreen] scale]);
 
     for (RMMapTiledLayerView *tiledLayerView in _tiledLayersSuperview.subviews)
         tiledLayerView.useSnapshotRenderer = YES;
 
-    [self.layer renderInContext:UIGraphicsGetCurrentContext()];
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    
+    CGContextTranslateCTM(ctx, -self.bounds.origin.x, -self.bounds.origin.y);
+    
+    [self.layer renderInContext:ctx];
 
     for (RMMapTiledLayerView *tiledLayerView in _tiledLayersSuperview.subviews)
         tiledLayerView.useSnapshotRenderer = NO;
@@ -1900,6 +1913,8 @@
 
     UIGraphicsEndImageContext();
 
+    _trackingHaloAnnotation.layer.hidden = wasTrackingHaloHidden;
+    
     _overlayView.hidden = NO;
 
     return image;
@@ -1908,6 +1923,62 @@
 - (UIImage *)takeSnapshot
 {
     return [self takeSnapshotAndIncludeOverlay:YES];
+}
+
+#pragma mark - Freeze
+
+- (void)setFrozen:(BOOL)frozen {
+    if (_frozen != frozen) {
+        _frozen = frozen;
+        if (_frozen) {
+            [self addSnapshotView];
+        } else {
+            [self removeSnapshotView];
+        }
+    }
+}
+
+- (void)addSnapshotView {
+    _snapshotView = [[[UIImageView alloc] initWithImage:[self takeFreezeSnapshot]] retain];
+    _snapshotView.center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
+    
+    [self addSubview:_snapshotView];
+}
+
+- (void)updateSnapshotView {
+    if (_snapshotView) {
+        _snapshotView.hidden = YES;
+        UIImage *snapshot = [self takeFreezeSnapshot];
+        _snapshotView.hidden = NO;
+        
+        _snapshotView.image = snapshot;
+        
+        _snapshotView.center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
+    }
+}
+
+- (void)removeSnapshotView {
+    [_snapshotView removeFromSuperview]; [_snapshotView release]; _snapshotView = nil;
+}
+
+- (UIImage *)takeFreezeSnapshot
+{
+    CGRect bounds = self.bounds;
+    
+    CGRect rect = bounds;
+    if (rect.size.width > rect.size.height) {
+        rect.origin.y -= (rect.size.width - rect.size.height) / 2.0f;
+        rect.size.height = rect.size.width;
+    } else {
+        rect.origin.x -= (rect.size.height - rect.size.width) / 2.0f;
+        rect.size.width = rect.size.height;
+    }
+    
+    self.bounds = rect;
+    UIImage *image = [self takeSnapshot];
+    self.bounds = bounds;
+    
+    return image;
 }
 
 #pragma mark - TileSources
