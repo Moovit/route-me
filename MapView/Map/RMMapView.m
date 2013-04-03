@@ -1940,6 +1940,7 @@
 
 - (void)addSnapshotView {
     _snapshotView = [[[UIImageView alloc] initWithImage:[self takeFreezeSnapshot]] retain];
+    _snapshotView.contentMode = UIViewContentModeCenter;
     _snapshotView.center = CGPointMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds));
     
     [self addSubview:_snapshotView];
