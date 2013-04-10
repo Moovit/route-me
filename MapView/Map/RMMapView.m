@@ -283,15 +283,15 @@
                                                  name:UIApplicationDidReceiveMemoryWarningNotification
                                                object:nil];
 
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(handleWillChangeOrientationNotification:)
-                                                 name:UIApplicationWillChangeStatusBarOrientationNotification
-                                               object:nil];
-
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(handleDidChangeOrientationNotification:)
-                                                 name:UIApplicationDidChangeStatusBarOrientationNotification
-                                               object:nil];
+//    [[NSNotificationCenter defaultCenter] addObserver:self
+//                                             selector:@selector(handleWillChangeOrientationNotification:)
+//                                                 name:UIApplicationWillChangeStatusBarOrientationNotification
+//                                               object:nil];
+//
+//    [[NSNotificationCenter defaultCenter] addObserver:self
+//                                             selector:@selector(handleDidChangeOrientationNotification:)
+//                                                 name:UIApplicationDidChangeStatusBarOrientationNotification
+//                                               object:nil];
 
     RMLog(@"Map initialised. tileSource:%@, minZoom:%f, maxZoom:%f, zoom:%f at {%f,%f}", newTilesource, self.minZoom, self.maxZoom, self.zoom, initialCenterCoordinate.longitude, initialCenterCoordinate.latitude);
 }
@@ -1230,6 +1230,11 @@
     twoFingerSingleTapRecognizer.delegate = self;
 
     [self addGestureRecognizer:twoFingerSingleTapRecognizer];
+    
+    // rotation
+    UIRotationGestureRecognizer *rotationRecognizer = [[UIRotationGestureRecognizer alloc] initWithTarget:self action:@selector(handleRotation:)];
+    
+    [self addGestureRecognizer:rotationRecognizer];
 
     // pan
     UIPanGestureRecognizer *panGestureRecognizer = [[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handlePanGesture:)] autorelease];
@@ -1620,6 +1625,22 @@
 
     if (_delegateHasLongSingleTapOnMap)
         [_delegate longSingleTapOnMap:self at:[recognizer locationInView:self]];
+}
+
+- (void)handleRotation:(UIRotationGestureRecognizer *)recognizer
+{
+    RMLog(@"Rotation: %f, %f", recognizer.rotation, recognizer.velocity);
+    static CGFloat start = 0.0f;
+    
+    if (recognizer.state == UIGestureRecognizerStateBegan) {
+        start = self.direction;
+    } else {
+        CGFloat radians = fmodf(M_PI + fmodf(recognizer.rotation, M_PI), M_PI);
+        CGFloat angle = (radians * 180.0) / M_PI;
+        
+        self.direction = start - angle;
+    }
+    
 }
 
 // defines when the additional pan gesture recognizer on the scroll should handle the gesture
@@ -2620,6 +2641,74 @@
 }
 
 #pragma mark -
+#pragma mark Rotations
+
+static CLLocationDirection normalizeDirection(CLLocationDirection direction) {
+    direction = fmod(360 + fmod(direction, 360), 360);
+    direction = round(direction);
+    return direction;
+}
+
+- (void)setDirection:(CLLocationDirection)direction
+{
+    [self setDirection:direction animated:YES];
+}
+
+- (void)setDirection:(CLLocationDirection)newDirection animated:(BOOL)animated
+{
+    newDirection = normalizeDirection(newDirection);
+    
+    BOOL significantChange = (fabs(_direction - newDirection) > 5.0f);
+    BOOL changedToNorth = (_direction >= 1.0f && newDirection) < 1.0f;
+    
+    if (significantChange || changedToNorth)
+    {
+        _direction = newDirection;
+        
+        [CATransaction setAnimationDuration:0.5];
+        [CATransaction setAnimationTimingFunction:[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut]];
+        
+        [UIView animateWithDuration:(animated ? 0.5 : 0.0)
+                              delay:0.0
+                            options:UIViewAnimationOptionAllowAnimatedContent | UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationCurveEaseOut
+                         animations:^(void)
+                         {
+                             [self updateDirectionTransforms];
+                         }
+                         completion:nil];
+        
+        [CATransaction commit];
+    }
+}
+
+- (void)updateDirectionTransforms
+{
+    BOOL shouldCorrectAnnotationPositions = YES;
+    
+    if (self.direction < 1.0f) {
+        shouldCorrectAnnotationPositions = NO;
+        _mapTransform = CGAffineTransformIdentity;
+        _annotationTransform = CATransform3DIdentity;
+    } else {
+        CGFloat angle = (M_PI / -180) * self.direction;
+        _mapTransform = CGAffineTransformMakeRotation(angle);
+        _annotationTransform = CATransform3DMakeAffineTransform(CGAffineTransformMakeRotation(-angle));
+    }
+    
+    _mapScrollView.transform = _mapTransform;
+    _overlayView.transform   = _mapTransform;
+    
+    for (RMAnnotation *annotation in _annotations)
+        if ([annotation.layer isKindOfClass:[RMMarker class]] &&
+            (!annotation.isUserLocationAnnotation || self.userTrackingMode != RMUserTrackingModeFollowWithHeading))
+            annotation.layer.transform = _annotationTransform;
+    
+    if (shouldCorrectAnnotationPositions) {
+        [self correctPositionOfAllAnnotations];
+    }
+}
+
+#pragma mark -
 #pragma mark Bounds
 
 - (RMSphericalTrapezium)latitudeLongitudeBoundingBox
@@ -3093,27 +3182,7 @@
         {
             [_locationManager stopUpdatingHeading];
 
-            [CATransaction setAnimationDuration:0.5];
-            [CATransaction setAnimationTimingFunction:[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut]];
-
-            [UIView animateWithDuration:(animated ? 0.5 : 0.0)
-                                  delay:0.0
-                                options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationCurveEaseInOut
-                             animations:^(void)
-                             {
-                                 _mapTransform = CGAffineTransformIdentity;
-                                 _annotationTransform = CATransform3DIdentity;
-
-                                 _mapScrollView.transform = _mapTransform;
-                                 _overlayView.transform   = _mapTransform;
-
-                                 for (RMAnnotation *annotation in _annotations)
-                                     if ([annotation.layer isKindOfClass:[RMMarker class]] && ! annotation.isUserLocationAnnotation)
-                                         annotation.layer.transform = _annotationTransform;
-                             }
-                             completion:nil];
-
-            [CATransaction commit];
+            [self setDirection:0 animated:animated];
 
             if (_userLocationTrackingView || _userHeadingTrackingView || _userHaloTrackingView)
             {
@@ -3141,28 +3210,8 @@
                 [_userHeadingTrackingView removeFromSuperview]; _userHeadingTrackingView = nil;
                 [_userHaloTrackingView removeFromSuperview]; _userHaloTrackingView = nil;
             }
-
-            [CATransaction setAnimationDuration:0.5];
-            [CATransaction setAnimationTimingFunction:[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut]];
-
-            [UIView animateWithDuration:(animated ? 0.5 : 0.0)
-                                  delay:0.0
-                                options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationCurveEaseInOut
-                             animations:^(void)
-                             {
-                                 _mapTransform = CGAffineTransformIdentity;
-                                 _annotationTransform = CATransform3DIdentity;
-
-                                 _mapScrollView.transform = _mapTransform;
-                                 _overlayView.transform   = _mapTransform;
-
-                                 for (RMAnnotation *annotation in _annotations)
-                                     if ([annotation.layer isKindOfClass:[RMMarker class]] && ! annotation.isUserLocationAnnotation)
-                                         annotation.layer.transform = _annotationTransform;
-                             }
-                             completion:nil];
-
-            [CATransaction commit];
+            
+            [self setDirection:0 animated:animated];
 
             self.userLocation.layer.hidden = NO;
 
@@ -3410,32 +3459,7 @@
         if (_userHeadingTrackingView.alpha < 1.0)
             [UIView animateWithDuration:0.5 animations:^(void) { _userHeadingTrackingView.alpha = 1.0; }];
 
-        [CATransaction begin];
-        [CATransaction setAnimationDuration:0.5];
-        [CATransaction setAnimationTimingFunction:[CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut]];
-
-        [UIView animateWithDuration:0.5
-                              delay:0.0
-                            options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationCurveEaseInOut
-                         animations:^(void)
-                         {
-                             CGFloat angle = (M_PI / -180) * newHeading.trueHeading;
-
-                             _mapTransform = CGAffineTransformMakeRotation(angle);
-                             _annotationTransform = CATransform3DMakeAffineTransform(CGAffineTransformMakeRotation(-angle));
-
-                             _mapScrollView.transform = _mapTransform;
-                             _overlayView.transform   = _mapTransform;
-
-                             for (RMAnnotation *annotation in _annotations)
-                                 if ([annotation.layer isKindOfClass:[RMMarker class]] && ! annotation.isUserLocationAnnotation)
-                                     annotation.layer.transform = _annotationTransform;
-
-                             [self correctPositionOfAllAnnotations];
-                         }
-                         completion:nil];
-
-        [CATransaction commit];
+        [self setDirection:newHeading.trueHeading animated:YES];
     }
 }
 

@@ -257,6 +257,14 @@ typedef enum : NSUInteger {
 
 - (void)setMetersPerPixel:(double)newMetersPerPixel animated:(BOOL)animated;
 
+#pragma mark - Rotation
+
+/** @name Rotating the map */
+
+@property (nonatomic,assign) CLLocationDirection direction;
+
+- (void)setDirection:(CLLocationDirection)newDirection animated:(BOOL)animated;
+
 #pragma mark - Bounds
 
 /** @name Querying the Map Bounds */
