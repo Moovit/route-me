@@ -377,6 +377,9 @@
         [self correctMinZoomScaleForBoundingMask];
         
         [self updateSnapshotView];
+
+        if (_loadingTileView)
+            _loadingTileView.mapZooming = NO;
     }
 }
 
